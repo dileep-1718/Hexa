@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Hex Titan Game</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Roboto', sans-serif;
+      background: linear-gradient(135deg, #2c3e50, #34495e);
+      color: #ecf0f1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    h1 {
+      font-size: 3rem;
+      margin-bottom: 20px;
+      text-transform: uppercase;
+      letter-spacing: 5px;
+      color: rgb(233, 132, 10);
+      text-shadow: 2px 2px 5px rgba(0, 0, 0, 0.7);
+    }
+
+    svg {
+      border: 2px solid #44cbec;
+      border-radius: 10px;
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+      background: radial-gradient(circle, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.9));
+    }
+
+    .sidebar {
+      position: absolute;
+      top: 100px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+      width: 250px;
+      color: #ecf0f1;
+    }
+
+    .sidebar p {
+      margin: 15px 0;
+      font-size: 2rem;
+    }
+
+    .sidebar button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+      background: #e74c3c;
+      border: none;
+      border-radius: 5px;
+      color: #ecf0f1;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+
+    .sidebar button:hover {
+      background: #c0392b;
+    }
+
+    .node {
+      cursor: pointer;
+      stroke: #ecf0f1;
+      stroke-width: 2;
+      transition: transform 0.2s ease;
+    }
+
+    .red {
+      fill: #e74c3c;
+    }
+
+    .blue {
+      fill: #3498db;
+    }
+
+    .selected {
+      stroke: #f1c40f;
+      stroke-width: 4;
+    }
+
+    .locked {
+      opacity: 0.3;
+    }
+
+    .timer {
+      font-size: 1rem;
+      margin: 10px 0;
+      top: 150px;
+      left: 50px;
+      position: absolute;
+      color: #16c72b;
+    }
+
+    .timer span {
+      font-weight: bold;
+      font-size: 1rem;
+    }
+
+    #winnerMessage {
+      margin-top: 20px;
+      font-size: 1.5rem;
+      color: #f39c12;
+      text-align: center;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <h1>Hex Titan Game</h1>
+  <svg id="board" width="600" height="600"></svg>
+  <div class="sidebar">
+    <p>Red Score: <span id="redScore">0</span></p>
+    <p>Blue Score: <span id="blueScore">0</span></p>
+    <div id="winnerMessage"></div>
+    <button id="resetButton">Restart Game</button>
+    <button id="pauseButton">Pause</button>
+    <button id="resumeButton">Resume</button>
+  </div>
+  <div class="timer">
+    <p>Current Player: <span id="currentPlayer">red</span></p>
+    <p>Turn Timer: <span id="turnTimer">25</span>s</p>
+    <p>Game Timer: <span id="gameTimer">300</span>s</p>
+  </div>
+  <script>
+    const nodeRadius = 12;
+    const centerX = 300;
+    const centerY = 300;
+    const layerRadius = [200, 130, 60];
+    const TURN_DURATION = 25;
+    const GAME_DURATION = 300;
+
+    let turnTimeLeft = TURN_DURATION;
+    let gameTimeLeft = GAME_DURATION;
+    let turnTimerId = null;
+    let game;
+
+    const board = document.getElementById("board");
+
+    function createHexNodes() {
+      let index = 0;
+      layerRadius.forEach((radius, layer) => {
+        for (let i = 0; i < 6; i++) {
+          const angle = (i * Math.PI * 2) / 6;
+          const x = centerX + radius * Math.cos(angle);
+          const y = centerY + radius * Math.sin(angle);
+          game.nodes.push({ x, y, owner: null, layer, index });
+          index++;
+        }
+      });
+    }
+
+    function drawEdges() {
+      board.innerHTML = "";
+      game.edges = [];
+
+      const connectionsWithWeights = [
+        [0, 1, 1], [1, 2, 1], [2, 3, 3], [3, 4, 2], [4, 5, 1], [5, 0, 2],
+        [6, 7, 5], [7, 8, 6], [8, 9, 4], [9, 10, 5], [10, 11, 6], [11, 6, 4],
+        [12, 13, 8], [13, 14, 8], [14, 15, 9], [15, 16, 8], [16, 17, 8], [17, 12, 9],
+        [5, 11, 1], [1, 7, 1], [3, 9, 1],
+        [6, 12, 1], [8, 14, 1], [10, 16, 1]
+      ];
+
+      connectionsWithWeights.forEach(([a, b, weight]) => {
+        const n1 = game.nodes[a];
+        const n2 = game.nodes[b];
+
+        const edge = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        edge.setAttribute("x1", n1.x);
+        edge.setAttribute("y1", n1.y);
+        edge.setAttribute("x2", n2.x);
+        edge.setAttribute("y2", n2.y);
+        edge.setAttribute("stroke", "white");
+        edge.setAttribute("stroke-width", 2);
+        board.appendChild(edge);
+
+        const midX = (n1.x + n2.x) / 2;
+        const midY = (n1.y + n2.y) / 2;
+        const dx = n2.y - n1.y;
+        const dy = n1.x - n2.x;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        const offset = 12;
+        const offsetX = (dx / length) * offset;
+        const offsetY = (dy / length) * offset;
+
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("x", midX + offsetX);
+        text.setAttribute("y", midY + offsetY);
+        text.setAttribute("fill", "white");
+        text.setAttribute("font-size", "12");
+        text.setAttribute("text-anchor", "middle");
+        text.setAttribute("dominant-baseline", "middle");
+        text.textContent = weight;
+        board.appendChild(text);
+
+        game.edges.push({ a, b, weight, owner: null });
+      });
+    }
+
+    function areNodesAdjacent(a, b) {
+      return game.edges.some(edge => (edge.a === a && edge.b === b) || (edge.a === b && edge.b === a));
+    }
+
+    function updateEdgeControl() {
+      game.players.red.score = 0;
+      game.players.blue.score = 0;
+
+      game.edges.forEach(edge => {
+        const nodeA = game.nodes[edge.a];
+        const nodeB = game.nodes[edge.b];
+
+        if (nodeA.owner && nodeA.owner === nodeB.owner) {
+          edge.owner = nodeA.owner;
+          game.players[edge.owner].score += edge.weight;
+        } else {
+          edge.owner = null;
+        }
+      });
+
+      document.getElementById("redScore").textContent = game.players.red.score;
+      document.getElementById("blueScore").textContent = game.players.blue.score;
+    }
+
+    function checkForSurroundedTitans() {
+      game.nodes.forEach((node, index) => {
+        if (node.owner) {
+          const adjacent = game.edges
+            .filter(e => e.a === index || e.b === index)
+            .map(e => e.a === index ? e.b : e.a);
+          const allEnemies = adjacent.every(i =>
+            game.nodes[i].owner && game.nodes[i].owner !== node.owner
+          );
+          if (allEnemies) {
+            node.owner = null;
+          }
+        }
+      });
+    }
+
+    function render() {
+      const outerFilled = game.nodes.filter(n => n.layer === 0 && n.owner).length;
+      const middleFilled = game.nodes.filter(n => n.layer === 1 && n.owner).length;
+
+      if (!game.unlocked.middle && outerFilled === 6) game.unlocked.middle = true;
+      if (!game.unlocked.inner && middleFilled === 6) game.unlocked.inner = true;
+
+      game.nodes.forEach((node, index) => {
+        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        circle.setAttribute("cx", node.x);
+        circle.setAttribute("cy", node.y);
+        circle.setAttribute("r", nodeRadius);
+        circle.setAttribute("fill", "black");
+        circle.classList.add("node");
+
+        if (
+          (node.layer === 1 && !game.unlocked.middle) ||
+          (node.layer === 2 && !game.unlocked.inner)
+        ) {
+          circle.classList.add("locked");
+        } else {
+          circle.addEventListener("click", () => handleNodeClick(index));
+        }
+
+        if (node.owner) circle.classList.add(node.owner);
+        if (game.selectedNode === index) circle.classList.add("selected");
+
+        board.appendChild(circle);
+        node.element = circle;
+      });
+    }
+
+    function handleNodeClick(index) {
+      if (game.gameOver || game.paused) return;
+
+      const node = game.nodes[index];
+      const current = game.currentPlayer;
+
+      if (game.placementPhase) {
+        if (!node.owner && !node.element.classList.contains("locked") && game.players[current].titans > 0) {
+          node.owner = current;
+          game.players[current].titans -= 1;
+          updateEdgeControl();
+
+          board.innerHTML = "";
+          drawEdges();
+          render();
+
+          if (game.players.red.titans === 0 && game.players.blue.titans === 0) {
+            switchPlayer();
+            setTimeout(() => {
+              game.placementPhase = false;
+              alert("Movement Phase begins!");
+              board.innerHTML = "";
+              drawEdges();
+              render();
+            }, 300);
+          } else {
+            switchPlayer();
+          }
+        }
+      } else {
+        if (node.owner === current) {
+          game.selectedNode = (game.selectedNode === index) ? null : index;
+        } else if (!node.owner && game.selectedNode !== null) {
+          const fromNode = game.nodes[game.selectedNode];
+          if (areNodesAdjacent(game.selectedNode, index)) {
+            node.owner = current;
+            fromNode.owner = null;
+            game.selectedNode = null;
+            updateEdgeControl();
+            checkForSurroundedTitans();
+
+            board.innerHTML = "";
+            drawEdges();
+            render();
+
+            switchPlayer();
+          }
+        }
+
+        board.innerHTML = "";
+        drawEdges();
+        render();
+      }
+    }
+
+    function switchPlayer() {
+      game.currentPlayer = game.currentPlayer === "red" ? "blue" : "red";
+      document.getElementById("currentPlayer").textContent = game.currentPlayer;
+      turnTimeLeft = TURN_DURATION;
+    }
+
+    function startTimers() {
+      clearInterval(turnTimerId);
+      turnTimerId = setInterval(() => {
+        if (!game.paused && !game.gameOver) {
+          turnTimeLeft--;
+          gameTimeLeft--;
+          document.getElementById("turnTimer").textContent = turnTimeLeft;
+          document.getElementById("gameTimer").textContent = gameTimeLeft;
+          if (turnTimeLeft <= 0) switchPlayer();
+          if (gameTimeLeft <= 0) {
+            clearInterval(turnTimerId);
+            endGame();
+          }
+        }
+      }, 1000);
+    }
+
+    function endGame() {
+      game.gameOver = true;
+      const red = game.players.red.score;
+      const blue = game.players.blue.score;
+      let msg = "Game Over! ";
+      msg += red > blue ? "Red wins!" : blue > red ? "Blue wins!" : "It's a tie!";
+      document.getElementById("winnerMessage").textContent = msg;
+    }
+
+    function initializeGame() {
+      game = {
+        nodes: [],
+        edges: [],
+        players: {
+          red: { titans: 4, score: 0 },
+          blue: { titans: 4, score: 0 }
+        },
+        currentPlayer: "red",
+        placementPhase: true,
+        selectedNode: null,
+        unlocked: { middle: false, inner: false },
+        gameOver: false,
+        paused: false
+      };
+      turnTimeLeft = TURN_DURATION;
+      gameTimeLeft = GAME_DURATION;
+      document.getElementById("redScore").textContent = 0;
+      document.getElementById("blueScore").textContent = 0;
+      document.getElementById("currentPlayer").textContent = "red";
+      document.getElementById("turnTimer").textContent = TURN_DURATION;
+      document.getElementById("gameTimer").textContent = GAME_DURATION;
+      document.getElementById("winnerMessage").textContent = "";
+      clearInterval(turnTimerId);
+      board.innerHTML = "";
+      createHexNodes();
+      drawEdges();
+      render();
+      startTimers();
+    }
+
+    document.getElementById("resetButton").addEventListener("click", () => {
+      if (confirm("Restart the game?")) initializeGame();
+    });
+    document.getElementById("pauseButton").addEventListener("click", () => {
+      game.paused = true;
+      clearInterval(turnTimerId);
+    });
+    document.getElementById("resumeButton").addEventListener("click", () => {
+      if (!game.gameOver) {
+        game.paused = false;
+        startTimers();
+      }
+    });
+
+    document.addEventListener("DOMContentLoaded", initializeGame);
+  </script>
+</body>
+</html>
